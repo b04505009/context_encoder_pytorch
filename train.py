@@ -16,12 +16,12 @@ from torch.autograd import Variable
 from model import _netlocalD,_netG
 import utils
 
-
+from tqdm import tqdm
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset',  default='streetview', help='cifar10 | lsun | imagenet | folder | lfw ')
 parser.add_argument('--dataroot',  default='dataset/train', help='path to dataset')
-parser.add_argument('--workers', type=int, help='number of data loading workers', default=2)
+parser.add_argument('--workers', type=int, help='number of data loading workers', default=0)
 parser.add_argument('--batchSize', type=int, default=64, help='input batch size')
 parser.add_argument('--imageSize', type=int, default=128, help='the height / width of the input image to network')
 
@@ -73,15 +73,15 @@ if opt.dataset in ['imagenet', 'folder', 'lfw']:
     # folder dataset
     dataset = dset.ImageFolder(root=opt.dataroot,
                                transform=transforms.Compose([
-                                   transforms.Scale(opt.imageSize),
+                                   transforms.Resize(opt.imageSize),
                                    transforms.CenterCrop(opt.imageSize),
                                    transforms.ToTensor(),
                                    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
                                ]))
 elif opt.dataset == 'lsun':
-    dataset = dset.LSUN(db_path=opt.dataroot, classes=['bedroom_train'],
+    dataset = dset.LSUN(root=opt.dataroot, classes=['church_outdoor_train'],
                         transform=transforms.Compose([
-                            transforms.Scale(opt.imageSize),
+                            transforms.Resize(opt.imageSize),
                             transforms.CenterCrop(opt.imageSize),
                             transforms.ToTensor(),
                             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
@@ -89,13 +89,13 @@ elif opt.dataset == 'lsun':
 elif opt.dataset == 'cifar10':
     dataset = dset.CIFAR10(root=opt.dataroot, download=True,
                            transform=transforms.Compose([
-                               transforms.Scale(opt.imageSize),
+                               transforms.Resize(opt.imageSize),
                                transforms.ToTensor(),
                                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
                            ])
     )
 elif opt.dataset == 'streetview':
-    transform = transforms.Compose([transforms.Scale(opt.imageSize),
+    transform = transforms.Compose([transforms.Resize(opt.imageSize),
                                     transforms.CenterCrop(opt.imageSize),
                                     transforms.ToTensor(),
                                     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
@@ -104,13 +104,13 @@ assert dataset
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batchSize,
                                          shuffle=True, num_workers=int(opt.workers))
 
-ngpu = int(opt.ngpu)
-nz = int(opt.nz)
-ngf = int(opt.ngf)
-ndf = int(opt.ndf)
-nc = 3
-nef = int(opt.nef)
-nBottleneck = int(opt.nBottleneck)
+# ngpu = int(opt.ngpu)
+# nz = int(opt.nz)
+# ngf = int(opt.ngf)
+# ndf = int(opt.ndf)
+# nc = 3
+# nef = int(opt.nef)
+# nBottleneck = int(opt.nBottleneck)
 wtl2 = float(opt.wtl2)
 overlapL2Weight = 10
 
@@ -150,7 +150,7 @@ label = torch.FloatTensor(opt.batchSize)
 real_label = 1
 fake_label = 0
 
-real_center = torch.FloatTensor(opt.batchSize, 3, opt.imageSize/2, opt.imageSize/2)
+real_center = torch.FloatTensor(opt.batchSize, 3, opt.imageSize//2, opt.imageSize//2)
 
 if opt.cuda:
     netD.cuda()
@@ -172,23 +172,28 @@ real_center = Variable(real_center)
 optimizerD = optim.Adam(netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 
-for epoch in range(resume_epoch,opt.niter):
+for epoch in tqdm(range(resume_epoch, opt.niter)):
     for i, data in enumerate(dataloader, 0):
         real_cpu, _ = data
         real_center_cpu = real_cpu[:,:,int(opt.imageSize/4):int(opt.imageSize/4)+int(opt.imageSize/2),int(opt.imageSize/4):int(opt.imageSize/4)+int(opt.imageSize/2)]
         batch_size = real_cpu.size(0)
-        input_real.data.resize_(real_cpu.size()).copy_(real_cpu)
-        input_cropped.data.resize_(real_cpu.size()).copy_(real_cpu)
-        real_center.data.resize_(real_center_cpu.size()).copy_(real_center_cpu)
-        input_cropped.data[:,0,int(opt.imageSize/4+opt.overlapPred):int(opt.imageSize/4+opt.imageSize/2-opt.overlapPred),int(opt.imageSize/4+opt.overlapPred):int(opt.imageSize/4+opt.imageSize/2-opt.overlapPred)] = 2*117.0/255.0 - 1.0
-        input_cropped.data[:,1,int(opt.imageSize/4+opt.overlapPred):int(opt.imageSize/4+opt.imageSize/2-opt.overlapPred),int(opt.imageSize/4+opt.overlapPred):int(opt.imageSize/4+opt.imageSize/2-opt.overlapPred)] = 2*104.0/255.0 - 1.0
-        input_cropped.data[:,2,int(opt.imageSize/4+opt.overlapPred):int(opt.imageSize/4+opt.imageSize/2-opt.overlapPred),int(opt.imageSize/4+opt.overlapPred):int(opt.imageSize/4+opt.imageSize/2-opt.overlapPred)] = 2*123.0/255.0 - 1.0
+        with torch.no_grad():
+            input_real.resize_(real_cpu.size()).copy_(real_cpu)
+            input_cropped.resize_(real_cpu.size()).copy_(real_cpu)
+            real_center.resize_(
+                real_center_cpu.size()).copy_(real_center_cpu)
+            input_cropped[:, 0, int(opt.imageSize/4+opt.overlapPred):int(opt.imageSize/4+opt.imageSize/2-opt.overlapPred), int(
+                opt.imageSize/4+opt.overlapPred):int(opt.imageSize/4+opt.imageSize/2-opt.overlapPred)] = 2*117.0/255.0 - 1.0
+            input_cropped[:, 1, int(opt.imageSize/4+opt.overlapPred):int(opt.imageSize/4+opt.imageSize/2-opt.overlapPred), int(
+                opt.imageSize/4+opt.overlapPred):int(opt.imageSize/4+opt.imageSize/2-opt.overlapPred)] = 2*104.0/255.0 - 1.0
+            input_cropped[:, 2, int(opt.imageSize/4+opt.overlapPred):int(opt.imageSize/4+opt.imageSize/2-opt.overlapPred), int(
+                opt.imageSize/4+opt.overlapPred):int(opt.imageSize/4+opt.imageSize/2-opt.overlapPred)] = 2*123.0/255.0 - 1.0
+            label.resize_(batch_size).fill_(real_label)
 
         # train with real
         netD.zero_grad()
-        label.data.resize_(batch_size).fill_(real_label)
 
-        output = netD(real_center)
+        output = torch.squeeze(netD(real_center))
         errD_real = criterion(output, label)
         errD_real.backward()
         D_x = output.data.mean()
@@ -198,7 +203,7 @@ for epoch in range(resume_epoch,opt.niter):
         # noise.data.normal_(0, 1)
         fake = netG(input_cropped)
         label.data.fill_(fake_label)
-        output = netD(fake.detach())
+        output = torch.squeeze(netD(fake.detach()))
         errD_fake = criterion(output, label)
         errD_fake.backward()
         D_G_z1 = output.data.mean()
@@ -211,7 +216,7 @@ for epoch in range(resume_epoch,opt.niter):
         ###########################
         netG.zero_grad()
         label.data.fill_(real_label)  # fake labels are real for generator cost
-        output = netD(fake)
+        output = torch.squeeze(netD(fake))
         errG_D = criterion(output, label)
         # errG_D.backward(retain_variables=True)
 
@@ -219,7 +224,7 @@ for epoch in range(resume_epoch,opt.niter):
         wtl2Matrix = real_center.clone()
         wtl2Matrix.data.fill_(wtl2*overlapL2Weight)
         wtl2Matrix.data[:,:,int(opt.overlapPred):int(opt.imageSize/2 - opt.overlapPred),int(opt.overlapPred):int(opt.imageSize/2 - opt.overlapPred)] = wtl2
-        
+
         errG_l2 = (fake-real_center).pow(2)
         errG_l2 = errG_l2 * wtl2Matrix
         errG_l2 = errG_l2.mean()
@@ -233,7 +238,7 @@ for epoch in range(resume_epoch,opt.niter):
 
         print('[%d/%d][%d/%d] Loss_D: %.4f Loss_G: %.4f / %.4f l_D(x): %.4f l_D(G(z)): %.4f'
               % (epoch, opt.niter, i, len(dataloader),
-                 errD.data[0], errG_D.data[0],errG_l2.data[0], D_x,D_G_z1, ))
+                 errD.data, errG_D.data,errG_l2.data, D_x,D_G_z1, ))
         if i % 100 == 0:
             vutils.save_image(real_cpu,
                     'result/train/real/real_samples_epoch_%03d.png' % (epoch))
