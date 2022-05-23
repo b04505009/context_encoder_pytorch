@@ -48,4 +48,14 @@ python train.py --cuda --wtl2 0.999 --niter 200
 
     This step is similar to [Semantic Inpainting Demo](#1-semantic-inpainting-demo)
 
-    
+### 3) ECE285 Final Project
+-  Train
+    1. Run `pip3 install pytorch torchvision lmdb`
+
+    2. Download `download.py` from [https://github.com/fyu/lsun](https://github.com/fyu/lsun)
+
+    3. Run `python3 download.py -c church_outdoor`
+
+    4. Unzip `church_outdoor_train_lmdb.zip` into `dataset/train/`
+
+    5. Run `python3 train.py --dataset lsun --cuda --wtl2 0.999 --niter 200`
